@@ -57,6 +57,31 @@ def get_backends() -> dict:
     return _backends_cache
 
 
+def save_backends(backends_data: dict) -> bool:
+    """Write backends data to backends.json and invalidate cache."""
+    global _backends_cache
+    path = CONFIG_BASE / "backends.json"
+    try:
+        with open(path, "w") as f:
+            json.dump(backends_data, f, indent=2)
+        _backends_cache = backends_data
+        return True
+    except Exception:
+        return False
+
+
+def get_available_models() -> list[dict]:
+    """Fetch available Ollama models via API."""
+    import requests
+    try:
+        resp = requests.get(f"{os.environ.get('OLLAMA_BASE', 'http://localhost:11434')}/api/tags",
+                             timeout=5)
+        resp.raise_for_status()
+        return resp.json().get("models", [])
+    except Exception:
+        return []
+
+
 # ---------------------------------------------------------------------------
 # Assets config
 # ---------------------------------------------------------------------------

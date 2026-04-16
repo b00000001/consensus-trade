@@ -13,6 +13,8 @@ from dash.dependencies import Input, Output, State
 import plotly.express as px
 import plotly.graph_objects as go
 
+from dashboard.config_panel import render_config_panel, register_config_callbacks
+
 from execution.portfolio import Portfolio
 from execution.paper_trader import PaperTrader
 
@@ -198,6 +200,11 @@ def create_dashboard(
                     ]),
                 ], style={"padding": "30px"}),
             ]),
+
+            # ---- CONFIG TAB ----
+            dcc.Tab(label="⚙ CONFIG", className="dash-tab", selected_className="dash-tab--selected", children=[
+                html.Div(id="config-tab-content", style={"padding": "30px"}),
+            ]),
         ]),
 
         # Store for cross-callback data
@@ -301,6 +308,14 @@ def create_dashboard(
 
         fig = _make_comparison_chart(rows)
         return rows, fig
+
+    # Inject config panel into the CONFIG tab
+    from dash import html
+    config_tab_content = app.layout.children[2].children[4]  # dcc.Tabs > children[2] = CONFIG tab children
+    if hasattr(config_tab_content, 'id') and config_tab_content.id == "config-tab-content":
+        config_tab_content.children = render_config_panel(app)
+
+    register_config_callbacks(app)
 
     return app
 
