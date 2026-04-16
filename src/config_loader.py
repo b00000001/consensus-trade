@@ -1,10 +1,8 @@
 """
-Phase 1d — Config Loader
-Loads YAML configs from config/ subdirectories and .env via python-dotenv.
-Supports hot-reload via importlib.reload.
+Config Loader — ConsensusTrade
+Loads YAML/JSON configs with path resolution relative to the project root.
+Supports hot-reload by clearing caches.
 """
-import importlib
-import importlib.util
 import json
 import os
 import sys
@@ -15,17 +13,19 @@ import yaml
 from dotenv import load_dotenv
 
 
-CONFIG_BASE = Path(os.environ.get("CONFIG_BASE", "/opt/consensus-trade/config"))
-ENV_FILE = Path(os.environ.get("ENV_FILE", "/opt/consensus-trade/.env"))
+# ── Path resolution ──────────────────────────────────────────────────────────
+# Resolve project root from this file's location (src/config_loader.py → project root)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+CONFIG_BASE = Path(os.environ.get("CONFIG_BASE", str(_PROJECT_ROOT / "config")))
+ENV_FILE = Path(os.environ.get("ENV_FILE", str(_PROJECT_ROOT / ".env")))
 
 # Load .env at import time
 if ENV_FILE.exists():
     load_dotenv(ENV_FILE)
 
 
-# ---------------------------------------------------------------------------
-# Raw YAML / JSON loaders
-# ---------------------------------------------------------------------------
+# ── Raw YAML / JSON loaders ─────────────────────────────────────────────────
 
 def load_yaml(rel_path: str) -> dict:
     path = CONFIG_BASE / rel_path
@@ -43,9 +43,7 @@ def load_json(rel_path: str) -> dict:
         return json.load(f)
 
 
-# ---------------------------------------------------------------------------
-# Backends config
-# ---------------------------------------------------------------------------
+# ── Backends config ──────────────────────────────────────────────────────────
 
 _backends_cache: Optional[dict] = None
 
@@ -74,17 +72,15 @@ def get_available_models() -> list[dict]:
     """Fetch available Ollama models via API."""
     import requests
     try:
-        resp = requests.get(f"{os.environ.get('OLLAMA_BASE', 'http://localhost:11434')}/api/tags",
-                             timeout=5)
+        base = os.environ.get("OLLAMA_BASE", "http://localhost:11434")
+        resp = requests.get(f"{base}/api/tags", timeout=5)
         resp.raise_for_status()
         return resp.json().get("models", [])
     except Exception:
         return []
 
 
-# ---------------------------------------------------------------------------
-# Assets config
-# ---------------------------------------------------------------------------
+# ── Assets config ────────────────────────────────────────────────────────────
 
 _assets_cache: Optional[dict] = None
 
@@ -96,9 +92,7 @@ def get_assets() -> dict:
     return _assets_cache
 
 
-# ---------------------------------------------------------------------------
-# Strategy configs
-# ---------------------------------------------------------------------------
+# ── Strategy configs ─────────────────────────────────────────────────────────
 
 _strategies_cache: dict[str, dict] = {}
 
@@ -122,9 +116,7 @@ def list_strategies(asset_class: str) -> list[str]:
     return [p.stem for p in strategies_dir.glob("*.yaml")]
 
 
-# ---------------------------------------------------------------------------
-# Consensus configs
-# ---------------------------------------------------------------------------
+# ── Consensus configs ────────────────────────────────────────────────────────
 
 _consensus_cache: dict[str, dict] = {}
 
@@ -135,9 +127,7 @@ def get_consensus_config(asset_class: str) -> dict:
     return _consensus_cache[asset_class]
 
 
-# ---------------------------------------------------------------------------
-# Hot reload
-# ---------------------------------------------------------------------------
+# ── Hot reload ───────────────────────────────────────────────────────────────
 
 def reload_strategies():
     """Clear strategy cache — call after editing strategy YAMLs."""
@@ -170,9 +160,7 @@ def hot_reload_all():
     reload_consensus()
 
 
-# ---------------------------------------------------------------------------
-# Env helper
-# ---------------------------------------------------------------------------
+# ── Env helper ───────────────────────────────────────────────────────────────
 
 def get_env(key: str, default: Optional[str] = None) -> Optional[str]:
     return os.environ.get(key, default)
@@ -198,9 +186,7 @@ def get_env_float(key: str, default: float = 0.0) -> float:
     return default
 
 
-# ---------------------------------------------------------------------------
-# Agent backend lookup
-# ---------------------------------------------------------------------------
+# ── Agent backend lookup ─────────────────────────────────────────────────────
 
 def get_backend_by_id(backend_id: str) -> Optional[dict]:
     backends = get_backends()

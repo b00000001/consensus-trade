@@ -1,16 +1,15 @@
 """
-Phase 1a — orchestrator.py
-APScheduler loop, ties all layers together.
+orchestrator.py — ConsensusTrade
+APScheduler-driven loop that ties all system layers together.
 """
 import logging
 import os
-import signal
 import sys
 import time
 from typing import Optional
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.interval import IntervalTrigger; from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from src.config_loader import get_assets, get_backends, load_strategy, hot_reload_all
 from src.market_data_fetcher import MarketDataFetcher
@@ -32,33 +31,13 @@ from risk.budget_guard import BudgetGuard
 from execution.portfolio import Portfolio
 from execution.paper_trader import PaperTrader
 
-from dashboard.app import create_dashboard, update_execution_feed_event, update_consensus_log_event, update_agent_votes, update_risk_status
-
-
-log = logging.getLogger(__name__)
-from apscheduler.triggers.interval import IntervalTrigger; from apscheduler.triggers.cron import CronTrigger
-
-from src.config_loader import get_assets, get_backends, load_strategy, hot_reload_all
-from src.market_data_fetcher import MarketDataFetcher
-from src.db_models import init_db
-
-from agents.strategy_agent import StrategyAgent
-from agents.research_agent import ResearchAgent
-from agents.agent_pool import AgentPool
-from agents.claude_judge import ClaudeJudge
-
-from consensus.engine import ConsensusEngine
-from consensus.escalation import EscalationTracker
-
-from risk.calculator import RiskProfile
-from risk.trade_validator import validate_full_trade
-from risk.circuit_breaker import CircuitBreaker
-from risk.budget_guard import BudgetGuard
-
-from execution.portfolio import Portfolio
-from execution.paper_trader import PaperTrader
-
-from dashboard.app import create_dashboard, update_execution_feed_event, update_consensus_log_event, update_agent_votes, update_risk_status
+from dashboard.app import (
+    create_dashboard,
+    update_execution_feed_event,
+    update_consensus_log_event,
+    update_agent_votes,
+    update_risk_status,
+)
 
 
 log = logging.getLogger(__name__)
@@ -71,7 +50,7 @@ class TradingOrchestrator:
 
     def __init__(
         self,
-        db_path: str = "db/live.db",
+        db_path: str = "data/live.db",
         poll_interval_seconds: int = 60,
         starting_cash: float = 10_000.0,
     ):
@@ -95,7 +74,10 @@ class TradingOrchestrator:
 
         # Build strategy agents from config
         self.strategy_agents = self._build_strategy_agents()
-        self.agent_pool = AgentPool(agents=self.strategy_agents, research_agent=self.research_agent)
+        self.agent_pool = AgentPool(
+            agents=self.strategy_agents,
+            research_agent=self.research_agent,
+        )
         self.consensus_engine = ConsensusEngine(
             judge=self.judge,
             escalation_tracker=self.escalation_tracker,
@@ -118,9 +100,11 @@ class TradingOrchestrator:
         assets = get_assets()
         backends = get_backends()
 
-        # Map backend IDs to models
         backend_map = {b["id"]: b for b in backends.get("backends", [])}
-        signal_backends = [b for b in backend_map.values() if b.get("role") == "signal" and b.get("includeInFanout")]
+        signal_backends = [
+            b for b in backend_map.values()
+            if b.get("role") == "signal" and b.get("includeInFanout")
+        ]
 
         for asset_class, asset_list in assets.items():
             strategies = asset_list.get("strategies", [])
@@ -128,7 +112,6 @@ class TradingOrchestrator:
                 strat_cfg = load_strategy(asset_class, strat_name)
                 if not strat_cfg:
                     continue
-                # Pick a backend
                 be = signal_backends[0] if signal_backends else {
                     "id": "signal-qwen", "model": "qwen3:32b", "adapter": "ollama"
                 }
@@ -153,7 +136,6 @@ class TradingOrchestrator:
                 for symbol in asset_data.get("symbols", []):
                     self._process_asset(symbol, asset_class)
 
-            # Update dashboard
             update_risk_status(self.circuit_breaker.status())
             update_consensus_log_event({
                 "asset": "system",
@@ -169,36 +151,34 @@ class TradingOrchestrator:
     def _process_asset(self, symbol: str, asset_class: str):
         """Process a single asset through the full pipeline."""
         try:
-            # 1. Fetch market data
             snapshot = self.market_fetcher.fetch_price(symbol)
             if not snapshot:
                 log.warning("No price for %s, skipping", symbol)
                 return
 
             current_price = snapshot.price
-
-            # 2. Run agent pool (research + signals)
             pool_result = self.agent_pool.run_full_cycle(symbol)
 
             if not pool_result.signals:
                 log.info("No signals for %s", symbol)
                 return
 
-            # 3. Risk check (Tier 0)
+            # Risk check (Tier 0)
             trade_val_ok = True
             for sig in pool_result.signals:
+                pos = self.portfolio.get_position(symbol)
                 result = validate_full_trade(
                     signal=sig.signal,
                     cash_available=self.portfolio.cash,
-                    position_quantity=self.portfolio.get_position(symbol).quantity if self.portfolio.get_position(symbol) else 0.0,
+                    position_quantity=pos.quantity if pos else 0.0,
                     price=current_price,
-                    quantity=0.001,  # minimum trade unit
+                    quantity=0.001,
                 )
                 if not result.ok:
                     trade_val_ok = False
                     log.info("Trade validation failed for %s: %s", symbol, result.reason)
 
-            # 4. Consensus
+            # Consensus
             decision = self.consensus_engine.resolve(
                 asset=symbol,
                 asset_class=asset_class,
@@ -209,12 +189,10 @@ class TradingOrchestrator:
                 budget_cap_reached=self.budget_guard.cap_reached(symbol),
             )
 
-            # Build agent -> model map for dashboard display
             agent_model_map = {s.agent_id: s.model for s in pool_result.signals}
             if decision.escalated:
                 agent_model_map["claude-judge"] = "claude-sonnet-4-6"
 
-            # 5. Dashboard updates
             update_consensus_log_event({
                 "asset": symbol,
                 "signal": decision.signal,
@@ -223,13 +201,13 @@ class TradingOrchestrator:
                 "escalated": decision.escalated,
                 "agent_ids": [s.agent_id for s in pool_result.signals],
             }, agent_models=agent_model_map)
+
             update_agent_votes(
                 symbol,
                 {s.agent_id: s.signal for s in pool_result.signals},
                 agent_models=agent_model_map,
             )
 
-            # 6. Execute if not HOLD
             if decision.signal != "HOLD":
                 trade = self.paper_trader.propose(
                     asset=symbol,
@@ -258,17 +236,17 @@ class TradingOrchestrator:
         try:
             log.info("Running research pipeline...")
             report = self.research_agent.run_pipeline(limit=10)
-            log.info("Research: macro_risk=%.2f sentiment=%.2f", report.macro_risk, report.sentiment_score)
+            log.info(
+                "Research: macro_risk=%.2f sentiment=%.2f",
+                report.macro_risk, report.sentiment_score,
+            )
         except Exception as e:
             log.error("Research pipeline error: %s", e)
 
     def _run_heartbeat(self):
-        """
-        Ping all configured agents, log latency to DB.
-        Alert via Telegram if any agent is down for >3 consecutive checks.
-        """
+        """Ping all configured agents, log latency to DB."""
         from src.db_models import BotHeartbeat
-        from src.config_loader import get_backends
+        import requests as req
 
         backends = get_backends()
         ollama_base = os.environ.get("OLLAMA_BASE", "http://localhost:11434")
@@ -278,57 +256,50 @@ class TradingOrchestrator:
             adapter_type = be.get("adapter", "")
             model = be.get("model", "")
 
-            if adapter_type == "ollama":
-                import requests
-                start = time.monotonic()
-                try:
-                    resp = requests.get(f"{ollama_base}/api/tags", timeout=5)
+            start = time.monotonic()
+            success = False
+            latency_ms = 0.0
+            error_msg = None
+
+            try:
+                if adapter_type == "ollama":
+                    resp = req.get(f"{ollama_base}/api/tags", timeout=5)
                     resp.raise_for_status()
-                    latency_ms = (time.monotonic() - start) * 1000
-                    BotHeartbeat.record(agent_id, model, latency_ms, success=True)
-                    log.debug("[%s] Ollama heartbeat OK: %.0fms", agent_id, latency_ms)
-                except Exception as e:
-                    BotHeartbeat.record(agent_id, model, 0.0, success=False, error=str(e))
-                    log.warning("[%s] Ollama heartbeat failed: %s", agent_id, e)
-                    if BotHeartbeat.consecutive_failures(agent_id, threshold=3):
-                        log.error("[%s] DOWN — alerting", agent_id)
-                        # TODO: trigger Telegram alert via OpenClaw cron
-            elif adapter_type == "minimax":
-                from agents.adapters import MiniMaxAdapter
-                a = MiniMaxAdapter(agent_id=agent_id, model=model)
-                latency = a.ping()
-                if latency is not None:
-                    BotHeartbeat.record(agent_id, model, latency, success=True)
+                    success = True
+                elif adapter_type in ("minimax", "claude-cli", "gemini-cli"):
+                    # Use adapter ping method
+                    adapter_cls_map = {
+                        "minimax": "MiniMaxAdapter",
+                        "claude-cli": "ClaudeAdapter",
+                        "gemini-cli": "GeminiAdapter",
+                    }
+                    from agents import adapters
+                    cls = getattr(adapters, adapter_cls_map[adapter_type])
+                    adapter = cls(agent_id=agent_id, model=model)
+                    ping_result = adapter.ping()
+                    success = ping_result is not None
                 else:
-                    BotHeartbeat.record(agent_id, model, 0.0, success=False, error="ping_failed")
-                    if BotHeartbeat.consecutive_failures(agent_id, threshold=3):
-                        log.error("[%s] MiniMax DOWN — alerting", agent_id)
-            elif adapter_type == "claude-cli":
-                from agents.adapters import ClaudeAdapter
-                a = ClaudeAdapter(agent_id=agent_id, model=model)
-                latency = a.ping()
-                if latency is not None:
-                    BotHeartbeat.record(agent_id, model, latency, success=True)
-                else:
-                    BotHeartbeat.record(agent_id, model, 0.0, success=False, error="ping_failed")
-                    if BotHeartbeat.consecutive_failures(agent_id, threshold=3):
-                        log.error("[%s] Claude DOWN — alerting", agent_id)
-            elif adapter_type == "gemini-cli":
-                from agents.adapters import GeminiAdapter
-                a = GeminiAdapter(agent_id=agent_id, model=model)
-                latency = a.ping()
-                if latency is not None:
-                    BotHeartbeat.record(agent_id, model, latency, success=True)
-                else:
-                    BotHeartbeat.record(agent_id, model, 0.0, success=False, error="ping_failed")
-                    if BotHeartbeat.consecutive_failures(agent_id, threshold=3):
-                        log.error("[%s] Gemini DOWN — alerting", agent_id)
+                    continue
+
+                latency_ms = (time.monotonic() - start) * 1000
+
+            except Exception as e:
+                error_msg = str(e)
+                latency_ms = (time.monotonic() - start) * 1000
+
+            BotHeartbeat.record(
+                agent_id, model, latency_ms,
+                success=success, error=error_msg,
+            )
+
+            if not success and BotHeartbeat.consecutive_failures(agent_id, threshold=3):
+                log.error("[%s] DOWN for 3+ checks — alerting", agent_id)
 
     def _keep_ollama_warm(self):
         """Periodic ping to keep Ollama models warm."""
-        import requests
+        import requests as req
         try:
-            requests.get("http://localhost:11434/api/generate", timeout=5, json={
+            req.get("http://localhost:11434/api/generate", timeout=5, json={
                 "model": "qwen3:32b",
                 "prompt": ".",
                 "stream": False,
@@ -344,31 +315,24 @@ class TradingOrchestrator:
         self._running = True
         self._started = True
 
-        # Main trading cycle
         self._scheduler.add_job(
             self._run_trading_cycle,
             trigger=IntervalTrigger(seconds=self.poll_interval),
             id="trading_cycle",
             replace_existing=True,
         )
-
-        # Background research (every 5 min)
         self._scheduler.add_job(
             self._run_research_pipeline,
             trigger=IntervalTrigger(seconds=300),
             id="research_pipeline",
             replace_existing=True,
         )
-
-        # Keep Ollama warm (every 2 min)
         self._scheduler.add_job(
             self._keep_ollama_warm,
             trigger=IntervalTrigger(seconds=120),
             id="ollama_warm",
             replace_existing=True,
         )
-
-        # Heartbeat — ping all agents every 2 min
         self._scheduler.add_job(
             self._run_heartbeat,
             trigger=IntervalTrigger(seconds=120),
@@ -387,10 +351,10 @@ class TradingOrchestrator:
         log.info("Orchestrator stopped")
 
     def run(self):
-        """Run forever (blocking)."""
+        """Run forever (blocking). Cross-platform compatible."""
         self.start()
         try:
             while self._running:
-                signal.pause()
+                time.sleep(1)
         except KeyboardInterrupt:
             self.stop()

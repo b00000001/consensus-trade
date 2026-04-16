@@ -1,16 +1,16 @@
 """
-Phase 1a — main.py
-Entry point for ConsensusTrade.
+main.py — ConsensusTrade entry point.
 """
 import argparse
 import logging
 import os
 import sys
 
-# Fix module search path — cd to script dir and add src to path
+# Fix module search path
 _BASE = os.path.dirname(os.path.abspath(__file__))
 os.chdir(_BASE)
 sys.path.insert(0, os.path.join(_BASE, "src"))
+sys.path.insert(0, _BASE)
 
 from orchestrator import TradingOrchestrator
 
@@ -22,7 +22,7 @@ def main():
     parser.add_argument("--starting-cash", type=float, default=10_000.0,
                         help="Starting cash for paper trading (default: 10000)")
     parser.add_argument("--db-path", type=str,
-                        default="data\live.db",
+                        default=os.path.join("data", "live.db"),
                         help="Path to live SQLite database")
     parser.add_argument("--log-level", type=str, default="INFO",
                         choices=["DEBUG", "INFO", "WARNING", "ERROR"])
@@ -32,7 +32,6 @@ def main():
                         help="Run dashboard only (no trading cycle)")
     args = parser.parse_args()
 
-    # Configure logging
     logging.basicConfig(
         level=getattr(logging, args.log_level),
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
@@ -68,4 +67,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -15,7 +15,8 @@ from typing import Optional
 from sqlmodel import Field, SQLModel, Session, create_engine
 from sqlmodel.pool import StaticPool
 
-DB_PATH = Path("/opt/consensus-trade/data/trades.db")
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DB_PATH = _PROJECT_ROOT / "data" / "trades.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
@@ -86,29 +87,36 @@ def init_db(db_path: str):
     return engine, writer
 
 
-# ─── Module-level engine (singleton) ────────────────────────────────────────────
+# ─── Module-level engine (lazy singleton) ───────────────────────────────────────
 
-_engine = sqlite3.connect(str(DB_PATH), check_same_thread=False)
-_engine.execute("PRAGMA journal_mode=WAL")
-_engine.execute("PRAGMA synchronous=NORMAL")
-_engine.execute("PRAGMA busy_timeout=5000")
-_engine.execute("PRAGMA foreign_keys=ON")
-_engine.close()
-
-_engine = create_engine(
-    f"sqlite:///{DB_PATH}",
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-    echo=False,
-)
-SQLModel.metadata.create_all(_engine)
-
+_engine = None
 _local = threading.local()
+
+
+def _get_engine():
+    """Lazy engine initialization — only created on first use."""
+    global _engine
+    if _engine is None:
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.close()
+        _engine = create_engine(
+            f"sqlite:///{DB_PATH}",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+            echo=False,
+        )
+        SQLModel.metadata.create_all(_engine)
+    return _engine
 
 
 def get_session() -> Session:
     if not hasattr(_local, "session"):
-        _local.session = Session(_engine)
+        _local.session = Session(_get_engine())
     return _local.session
 
 
