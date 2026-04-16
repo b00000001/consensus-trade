@@ -163,4 +163,5 @@ class ConsensusEngine:
             signal=signal,
             confidence=confidence,
             reason="weighted_consensus",
+            agent_votes={s.agent_id: s.signal for s in signals},
         )

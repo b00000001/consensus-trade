@@ -17,8 +17,8 @@ from orchestrator import TradingOrchestrator
 
 def main():
     parser = argparse.ArgumentParser(description="ConsensusTrade")
-    parser.add_argument("--poll-interval", type=int, default=60,
-                        help="Trading cycle interval in seconds (default: 60)")
+    parser.add_argument("--poll-interval", type=int, default=300,
+                        help="Trading cycle interval in seconds (default: 300)")
     parser.add_argument("--starting-cash", type=float, default=10_000.0,
                         help="Starting cash for paper trading (default: 10000)")
     parser.add_argument("--db-path", type=str,

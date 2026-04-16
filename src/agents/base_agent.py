@@ -78,6 +78,12 @@ class BaseAgent(ABC):
             )
             resp.raise_for_status()
             raw = resp.json().get("response", "").strip()
+            # Handle doubly-quoted JSON strings (Ollama sometimes wraps in extra quotes)
+            if raw.startswith('"') and raw.endswith('"'):
+                try:
+                    raw = json.loads(raw)  # un-wrap one level
+                except json.JSONDecodeError:
+                    pass  # not doubly-quoted, continue
             return json.loads(raw)
         except requests.exceptions.Timeout:
             log.warning("[%s] Ollama timeout after %ds", self.agent_id, timeout)

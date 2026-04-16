@@ -15,8 +15,8 @@ import yaml
 from dotenv import load_dotenv
 
 
-CONFIG_BASE = Path("/opt/consensus-trade/config")
-ENV_FILE = Path("/opt/consensus-trade/.env")
+CONFIG_BASE = Path(os.environ.get("CONFIG_BASE", "/opt/consensus-trade/config"))
+ENV_FILE = Path(os.environ.get("ENV_FILE", "/opt/consensus-trade/.env"))
 
 # Load .env at import time
 if ENV_FILE.exists():

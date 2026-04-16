@@ -155,6 +155,13 @@ class StrategyAgent(BaseAgent):
         indicator_str = json.dumps(indicator_values, indent=2)
         sentiment_str = sentiment or "neutral"
 
+        # Extract RSI period for template substitution
+        rsi_period = 14
+        for ic in indicators_config:
+            if ic.get("type", "").upper() == "RSI":
+                rsi_period = ic.get("period", 14)
+                break
+
         # Substitute template vars
         market_block = (
             f"Symbol: {symbol}\n"
@@ -166,6 +173,7 @@ class StrategyAgent(BaseAgent):
         prompt = template.format(
             symbol=symbol,
             price=current_price,
+            period=rsi_period,
             rsi=indicator_values.get("RSI", 50.0),
             macd=indicator_values.get("MACD", (0, 0, 0))[0],
             signal_line=indicator_values.get("MACD", (0, 0, 0))[1],
