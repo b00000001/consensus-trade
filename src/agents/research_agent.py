@@ -1,6 +1,9 @@
 """
 Phase 4 — agents/research_agent.py
-Batches up to 10 headlines → 1 Ollama call, writes sentiment to Redis cache.
+Research agent supporting multiple backends:
+  - ollama (default): local, free, unlimited
+  - gemini-cli: free tier, rate-limited to 900 req/day, gated to every N cycles
+  - minimax: API-based, paid
 """
 import logging
 import os
@@ -10,9 +13,9 @@ from typing import Optional
 import feedparser
 import requests
 
-from agents.base_agent import BaseAgent, AgentSignal
-from src.redis_setup import cache_set, TTL_NEWS_SENTIMENT
-from src.market_data_fetcher import fence
+from agents.base_agent import AgentSignal
+from src.redis_setup import cache_set, TTL_NEWS_SENTIMENT, cache_get
+from agents.adapters import MiniMaxAdapter, GeminiAdapter, AdapterResponse
 
 
 log = logging.getLogger(__name__)
@@ -34,23 +37,41 @@ class Headline:
 @dataclass
 class ResearchReport:
     agent_id: str
-    macro_risk: float          # 0.0 (safe) – 1.0 (dangerous)
-    sentiment_score: float    # -1.0 (bearish) – 1.0 (bullish)
+    macro_risk: float           # 0.0 (safe) – 1.0 (dangerous)
+    sentiment_score: float     # -1.0 (bearish) – 1.0 (bullish)
     summary: str
     headlines: list[str]
+    adapter_used: str = "unknown"
+    latency_ms: float = 0.0
     metadata: dict = field(default_factory=dict)
 
 
-class ResearchAgent(BaseAgent):
+class ResearchAgent:
     """
     Tier 1 research agent.
-    Fetches RSS headlines, batches up to 10 into a single Ollama call,
+    Fetches RSS headlines, batches up to 10 into a single backend call,
     writes result to Redis cache.
+
+    Supports multiple backends: ollama (default), gemini-cli, minimax.
     """
 
-    def __init__(self, agent_id: str = "research-1", model: str = "qwen3:32b"):
-        super().__init__(agent_id, role="research", model=model, adapter="ollama")
-        self._headlines_cache: list[Headline] = []
+    def __init__(
+        self,
+        agent_id: str = "research-local",
+        model: str = "qwen3:32b",
+        adapter_name: str = "ollama",  # "ollama" | "gemini-cli" | "minimax"
+        cycle_gate: int = 1,  # only fire every N cycles (gemini-cli: 8 recommended)
+        timeout: int = 60,
+    ):
+        self.agent_id = agent_id
+        self.model = model
+        self.adapter_name = adapter_name
+        self.cycle_gate = cycle_gate
+        self.timeout = timeout
+
+        self._ollama_base = OLLAMA_BASE
+        self._minimax_adapter: Optional[MiniMaxAdapter] = None
+        self._gemini_adapter: Optional[GeminiAdapter] = None
 
     def fetch_headlines(self, limit: int = 10) -> list[Headline]:
         """Fetch latest headlines from configured RSS feeds."""
@@ -74,9 +95,71 @@ class ResearchAgent(BaseAgent):
                 break
         return headlines[:limit]
 
+    def _make_cache_key(self, headlines: list[Headline]) -> str:
+        import hashlib, json
+        titles = json.dumps(sorted(h.title for h in headlines), sort_keys=True)
+        return f"research:sentiment:{hashlib.sha256(titles.encode()).hexdigest()[:32]}"
+
+    def _call_ollama(self, prompt: str, system: str) -> Optional[dict]:
+        """Direct Ollama call (existing behavior)."""
+        import json as _json
+        try:
+            resp = requests.post(
+                f"{self._ollama_base}/api/generate",
+                json={"model": self.model, "prompt": f"System: {system}\n\n{prompt}",
+                      "system": system, "options": {"temperature": 0.3}, "stream": False},
+                timeout=self.timeout,
+            )
+            resp.raise_for_status()
+            raw = resp.json().get("response", "").strip()
+            # Handle doubly-quoted JSON
+            if raw.startswith('"') and raw.endswith('"'):
+                try:
+                    raw = _json.loads(raw)
+                except _json.JSONDecodeError:
+                    pass
+            return _json.loads(raw)
+        except Exception as e:
+            log.warning("[%s] Ollama call failed: %s", self.agent_id, e)
+            return None
+
+    def _call_gemini(self, prompt: str, system: str) -> Optional[dict]:
+        """Gemini CLI — fires only if should_fire(cycle) is True."""
+        if self._gemini_adapter is None:
+            self._gemini_adapter = GeminiAdapter(agent_id=self.agent_id, model="gemini-2.0-flash", timeout=self.timeout)
+        resp = self._gemini_adapter.call(prompt=f"System: {system}\n\n{prompt}")
+        if not resp.success:
+            log.warning("[%s] Gemini CLI call failed: %s", self.agent_id, resp.error)
+            return None
+        try:
+            import json as _json
+            text = resp.text.strip()
+            if text.startswith("```"):
+                lines = text.split("\n")
+                text = "\n".join(lines[1:]) if text.endswith("```") else text
+            return _json.loads(text)
+        except Exception as e:
+            log.warning("[%s] Gemini response parse failed: %s", self.agent_id, e)
+            return None
+
+    def _call_minimax(self, prompt: str, system: str) -> Optional[dict]:
+        """MiniMax API call."""
+        if self._minimax_adapter is None:
+            self._minimax_adapter = MiniMaxAdapter(agent_id=self.agent_id, model="MiniMax-M2.7")
+        resp = self._minimax_adapter.call(prompt=f"System: {system}\n\n{prompt}")
+        if not resp.success:
+            log.warning("[%s] MiniMax call failed: %s", self.agent_id, resp.error)
+            return None
+        try:
+            import json as _json
+            return _json.loads(resp.text)
+        except Exception as e:
+            log.warning("[%s] MiniMax parse failed: %s", self.agent_id, e)
+            return None
+
     def score_batch(self, headlines: list[Headline]) -> ResearchReport:
         """
-        Batched sentiment: up to 10 headlines → 1 Ollama call.
+        Batched sentiment: up to 10 headlines → 1 backend call.
         Returns ResearchReport with macro_risk and sentiment_score.
         """
         if not headlines:
@@ -86,71 +169,65 @@ class ResearchAgent(BaseAgent):
                 sentiment_score=0.0,
                 summary="No headlines available.",
                 headlines=[],
+                adapter_used=self.adapter_name,
             )
 
-        # Check cache
         cache_key = self._make_cache_key(headlines)
-        cached = self._cache_check(cache_key)
+        cached = cache_get(cache_key)
         if cached:
             return ResearchReport(**{**cached, "agent_id": self.agent_id})
 
-        # Build prompt
         headline_text = "\n".join(f"- {h.title}" for h in headlines)
         system = (
             "You are a financial news analysis agent. "
             "Assess the given headlines and respond with ONLY valid JSON: "
             '{"macro_risk": 0.0-1.0, "sentiment_score": -1.0-1.0, "summary": "..."}'
         )
-        prompt = f"Analyze these crypto/finance headlines:\n{self._fence(headline_text)}\n\nProvide JSON analysis."
+        prompt = f"Analyze these crypto/finance headlines:\n<data>\n{headline_text}\n</data>\n\nRespond with JSON only."
 
-        result = self._call_ollama(prompt=prompt, system=system, timeout=60)
+        if self.adapter_name == "gemini-cli":
+            result = self._call_gemini(prompt, system)
+        elif self.adapter_name == "minimax":
+            result = self._call_minimax(prompt, system)
+        else:
+            result = self._call_ollama(prompt, system)
 
         if result is None:
             return ResearchReport(
                 agent_id=self.agent_id,
                 macro_risk=0.5,
                 sentiment_score=0.0,
-                summary="Ollama unavailable.",
+                summary=f"{self.adapter_name} unavailable — using fallback.",
                 headlines=[h.title for h in headlines],
+                adapter_used=self.adapter_name,
             )
 
         macro_risk = float(result.get("macro_risk", 0.5))
         sentiment_score = float(result.get("sentiment_score", 0.0))
         summary = str(result.get("summary", ""))
 
-        # Cache result
         report = {
             "macro_risk": macro_risk,
             "sentiment_score": sentiment_score,
             "summary": summary,
             "headlines": [h.title for h in headlines],
+            "adapter_used": self.adapter_name,
             "metadata": {},
         }
-        self._cache_store(cache_key, report, TTL_NEWS_SENTIMENT)
+        cache_set(cache_key, report, TTL_NEWS_SENTIMENT)
 
         return ResearchReport(agent_id=self.agent_id, **report)
 
-    @staticmethod
-    def _make_cache_key(headlines: list[Headline]) -> str:
-        import hashlib, json
-        titles = json.dumps(sorted(h.title for h in headlines), sort_keys=True)
-        return f"research:sentiment:{hashlib.sha256(titles.encode()).hexdigest()[:32]}"
-
-    def generate(self, prompt: str, **kwargs) -> "AgentSignal":
-        """Required by ABC — not used directly; see run_pipeline."""
-        from agents.base_agent import AgentSignal
-        report = self.run_pipeline(limit=5)
-        return AgentSignal(
-            agent_id=self.agent_id,
-            signal="HOLD",
-            confidence=0.5,
-            rationale=f"Research: {report.summary[:200]}",
-            model_used=self.model,
-        )
+    def should_fire(self, cycle_number: int) -> bool:
+        """
+        For gemini-cli: only fire on every Nth cycle.
+        For ollama/minimax: always fire.
+        """
+        if self.adapter_name == "gemini-cli":
+            return cycle_number % self.cycle_gate == 0
+        return True
 
     def run_pipeline(self, limit: int = 10) -> ResearchReport:
-        """
-        Full background pipeline: fetch → score → cache → return report.
-        """
+        """Full pipeline: fetch → score → cache → return report."""
         headlines = self.fetch_headlines(limit=limit)
         return self.score_batch(headlines)

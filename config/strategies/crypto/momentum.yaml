@@ -1,6 +1,6 @@
 name: Momentum Breakout
 asset_class: crypto
-model: ollama/qwen3:32b
+model: signal-qwen
 indicators:
   - type: RSI
     period: 14

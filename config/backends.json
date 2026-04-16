@@ -1,8 +1,8 @@
 {
   "synthesis": {
     "mode": "judge",
-    "judgeBackendId": "claude-sonnet",
-    "confidenceThreshold": 0.7
+    "judgeBackendId": "claude-judge",
+    "confidenceThreshold": 0.65
   },
   "backends": [
     {
@@ -10,28 +10,48 @@
       "role": "signal",
       "adapter": "ollama",
       "model": "qwen3:32b",
-      "includeInFanout": true
+      "includeInFanout": true,
+      "description": "Primary signal agent — local Ollama, free & unlimited"
     },
     {
       "id": "signal-gemma",
       "role": "signal",
       "adapter": "ollama",
       "model": "gemma4:26b-fast",
-      "includeInFanout": true
+      "includeInFanout": true,
+      "description": "Secondary signal agent — local Ollama, free & unlimited"
     },
     {
-      "id": "risk-mistral",
-      "role": "risk",
+      "id": "signal-minimax",
+      "role": "signal",
+      "adapter": "minimax",
+      "model": "MiniMax-M2.7",
+      "includeInFanout": false,
+      "description": "Signal fallback — MiniMax API, paid, unlimited"
+    },
+    {
+      "id": "research-local",
+      "role": "research",
       "adapter": "ollama",
-      "model": "mistral:7b",
-      "includeInFanout": true
+      "model": "qwen3:32b",
+      "includeInFanout": true,
+      "description": "Research agent — local Ollama, free & unlimited"
     },
     {
-      "id": "claude-sonnet",
+      "id": "gemini-cli",
+      "role": "research",
+      "adapter": "gemini-cli",
+      "model": "gemini-2.0-flash",
+      "includeInFanout": false,
+      "description": "Research via Gemini CLI — free tier, rate-limited to 900 req/day"
+    },
+    {
+      "id": "claude-judge",
       "role": "judge",
-      "adapter": "claude",
+      "adapter": "claude-cli",
       "model": "claude-sonnet-4-6",
-      "includeInFanout": false
+      "includeInFanout": false,
+      "description": "Judge — Claude CLI, Sonnet 4. Fires only on low-confidence escalation."
     }
   ]
 }

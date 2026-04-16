@@ -1,6 +1,6 @@
 name: Breakout
 asset_class: crypto
-model: ollama/qwen3:32b
+model: signal-gemma
 indicators:
   - type: BB
     period: 20
