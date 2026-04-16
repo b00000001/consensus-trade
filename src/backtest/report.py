@@ -9,8 +9,6 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
-import requests
-
 from src.redis_setup import cache_get, cache_set, TTL_MARKET_ANALYSIS
 
 
@@ -103,7 +101,7 @@ def compute_metrics(
 def generate_narrative(metrics: PerformanceMetrics, strategy_name: str) -> str:
     """
     On-demand Claude narrative for a backtest result.
-    Cached in Redis to avoid repeat API calls.
+    Cached in Redis to avoid repeat CLI calls.
     """
     cache_key = f"backtest:narrative:{strategy_name}"
     cached = cache_get(cache_key)
@@ -120,30 +118,16 @@ def generate_narrative(metrics: PerformanceMetrics, strategy_name: str) -> str:
         f"Write a 2-3 sentence summary."
     )
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        return "Narrative generation requires ANTHROPIC_API_KEY."
-
     try:
-        resp = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": "claude-sonnet-4-6",
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 512,
-                "temperature": 0.3,
-            },
-            timeout=60,
-        )
-        resp.raise_for_status()
-        text = resp.json()["content"][0]["text"].strip()
-        cache_set(cache_key, text, TTL_MARKET_ANALYSIS)
-        return text
+        from agents.adapters import ClaudeAdapter
+        adapter = ClaudeAdapter(agent_id="report-claude", model="claude-sonnet-4-6")
+        resp = adapter.call_json(prompt)
+        if resp.success:
+            cache_set(cache_key, resp.text, 3600)
+            return resp.text
+        else:
+            log.warning("Claude narrative failed: %s", resp.error)
+            return f"Performance summary: {strategy_name} returned {metrics.total_return:.2%} with Sharpe {metrics.sharpe_ratio:.2f}."
     except Exception as e:
         log.warning("Narrative generation failed: %s", e)
         return f"Performance summary: {strategy_name} returned {metrics.total_return:.2%} with Sharpe {metrics.sharpe_ratio:.2f}."

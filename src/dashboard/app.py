@@ -213,6 +213,12 @@ def create_dashboard(
                         html.Div("Performance Attribution Chart", className="card-title"),
                         dcc.Graph(id="strategy-comparison-chart"),
                     ]),
+                    html.Div(className="ceo-card", children=[
+                        html.Div("Phase 9: Performance Reports", className="card-title"),
+                        html.Div(id="performance-reports-list"),
+                        html.Button("Generate Narrative", id="gen-report-btn", n_clicks=0, className="bt-run-btn"),
+                        html.Div(id="report-status"),
+                    ]),
                 ], style={"padding": "30px"}),
             ]),
 
@@ -353,6 +359,30 @@ def create_dashboard(
 
         fig = _make_comparison_chart(rows)
         return rows, fig
+
+    @callback(
+        Output("performance-reports-list", "children"),
+        Output("report-status", "children"),
+        Input("gen-report-btn", "n_clicks"),
+        State("bt-strategies", "value"),
+    )
+    def generate_report(n_clicks, strategies):
+        if n_clicks == 0:
+            return [], ""
+
+        from backtest.report import compute_metrics, generate_narrative
+
+        # Compute metrics from most recent backtest data
+        # For now show narrative for configured strategies
+        reports = []
+        for strategy in (strategies or ["momentum"]):
+            # Placeholder — real implementation reads from backtest results DB
+            # Using zero metrics as placeholder until backtest data is populated
+            from backtest.report import PerformanceMetrics
+            metrics = PerformanceMetrics(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0.0)
+            narrative = generate_narrative(metrics, strategy)
+            reports.append(html.Div(f"**{strategy}**: {narrative}", style={"marginBottom": "8px"}))
+        return reports, "✅ Reports generated"
 
     # Inject config panel into the CONFIG tab
     from dash import html
