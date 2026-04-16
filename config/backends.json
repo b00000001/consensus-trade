@@ -1,0 +1,37 @@
+{
+  "synthesis": {
+    "mode": "judge",
+    "judgeBackendId": "claude-sonnet",
+    "confidenceThreshold": 0.7
+  },
+  "backends": [
+    {
+      "id": "signal-qwen",
+      "role": "signal",
+      "adapter": "ollama",
+      "model": "qwen3:32b",
+      "includeInFanout": true
+    },
+    {
+      "id": "signal-gemma",
+      "role": "signal",
+      "adapter": "ollama",
+      "model": "gemma4:26b-fast",
+      "includeInFanout": true
+    },
+    {
+      "id": "risk-mistral",
+      "role": "risk",
+      "adapter": "ollama",
+      "model": "mistral:7b",
+      "includeInFanout": true
+    },
+    {
+      "id": "claude-sonnet",
+      "role": "judge",
+      "adapter": "claude",
+      "model": "claude-sonnet-4-6",
+      "includeInFanout": false
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+name: Breakout
+asset_class: crypto
+model: ollama/qwen3:32b
+indicators:
+  - type: BB
+    period: 20
+    num_std: 2.0
+  - type: RSI
+    period: 14
+    overbought: 70
+    oversold: 30
+prompt_template: |
+  You are a breakout trading agent for {symbol}.
+
+  <market_data>
+  Current price: {price}
+  Bollinger Bands: Upper {bb_upper}, Middle {bb_middle}, Lower {bb_lower}
+  RSI: {rsi}
+  News sentiment: {sentiment}
+  </market_data>
+
+  Output ONLY valid JSON: {"signal": "BUY"|"SELL"|"HOLD", "confidence": 0.0-1.0, "reasoning": "..."}

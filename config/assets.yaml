@@ -1,0 +1,21 @@
+crypto:
+  symbols:
+    - BTC/USDT
+    - ETH/USDT
+  strategies:
+    - momentum
+    - breakout
+
+forex:
+  symbols:
+    - EUR/USD
+    - GBP/USD
+  strategies:
+    - momentum
+
+stocks:
+  symbols:
+    - AAPL
+    - TSLA
+  strategies:
+    - momentum

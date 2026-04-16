@@ -1,0 +1,170 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;700&family=Outfit:wght@300;600;800&display=swap');
+
+:root {
+    --bg-base: #0A0E14;
+    --bg-surface: #141A23;
+    --bg-surface-elevated: #1C242F;
+    --text-primary: #F8FAFC;
+    --text-secondary: #94A3B8;
+    --accent-primary: #00D2FF;
+    --accent-glow: rgba(0, 210, 255, 0.4);
+    --success: #00FF94;
+    --danger: #FF3131;
+    --border: rgba(148, 163, 184, 0.1);
+}
+
+body {
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    font-family: 'Outfit', sans-serif;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: var(--bg-surface-elevated); border-radius: 10px; }
+
+/* Dashboard Header HUD */
+#command-hud {
+    background: rgba(20, 26, 35, 0.8);
+    backdrop-filter: blur(12px);
+    border-bottom: 2px solid var(--accent-primary);
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.hud-logo {
+    font-weight: 800;
+    font-size: 1.5rem;
+    letter-spacing: -0.05em;
+    color: var(--text-primary);
+}
+
+.hud-logo span {
+    color: var(--accent-primary);
+}
+
+.hud-metrics {
+    display: flex;
+    gap: 3rem;
+}
+
+.hud-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.hud-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-secondary);
+}
+
+.hud-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.2rem;
+    font-weight: 700;
+}
+
+/* Tabs Styling */
+.dash-tabs {
+    background: var(--bg-base);
+    border-bottom: 1px solid var(--border);
+}
+
+.dash-tab {
+    background: transparent !important;
+    border: none !important;
+    color: var(--text-secondary) !important;
+    padding: 1.5rem 2rem !important;
+    transition: all 0.3s ease;
+}
+
+.dash-tab--selected {
+    color: var(--accent-primary) !important;
+    border-bottom: 3px solid var(--accent-primary) !important;
+    background: linear-gradient(to top, rgba(0, 210, 255, 0.1), transparent) !important;
+}
+
+/* Cards */
+.ceo-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ceo-card:hover {
+    box-shadow: 0 0 20px var(--accent-glow);
+    border-color: var(--accent-primary);
+}
+
+.card-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+}
+
+/* Tables */
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table {
+    background-color: transparent !important;
+    border-collapse: collapse;
+}
+
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table thead th {
+    background-color: var(--bg-surface-elevated) !important;
+    color: var(--text-secondary) !important;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    padding: 12px !important;
+    border: none !important;
+}
+
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table tbody tr {
+    background-color: transparent !important;
+    border-bottom: 1px solid var(--border);
+}
+
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner table tbody td {
+    color: var(--text-primary) !important;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    padding: 12px !important;
+    border: none !important;
+}
+
+/* Trading Signals Colors */
+.signal-buy { color: var(--success) !important; font-weight: 700; }
+.signal-sell { color: var(--danger) !important; font-weight: 700; }
+.signal-hold { color: var(--text-secondary) !important; }
+
+/* Pulse Animation for Risk */
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.4; }
+    100% { opacity: 1; }
+}
+
+.risk-tripped {
+    color: var(--danger);
+    animation: pulse 1s infinite;
+    text-shadow: 0 0 10px var(--danger);
+}

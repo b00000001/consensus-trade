@@ -1,0 +1,7 @@
+method: weighted_confidence
+quorum: 0.6
+confidence_threshold: 0.7
+research_agent_weight: 1.5
+veto_on_macro_risk: true
+escalation_cooldown_seconds: 300
+tie_resolution: abstain

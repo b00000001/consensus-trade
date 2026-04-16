@@ -1,0 +1,23 @@
+name: Momentum Breakout
+asset_class: crypto
+model: ollama/qwen3:32b
+indicators:
+  - type: RSI
+    period: 14
+    overbought: 70
+    oversold: 30
+  - type: MACD
+    fast: 12
+    slow: 26
+    signal: 9
+prompt_template: |
+  You are a momentum trading agent for {symbol}.
+
+  <market_data>
+  Current price: {price}
+  RSI({period}): {rsi}
+  MACD line: {macd}, Signal: {signal_line}, Histogram: {histogram}
+  Recent news sentiment: {sentiment}
+  </market_data>
+
+  Output ONLY valid JSON: {"signal": "BUY"|"SELL"|"HOLD", "confidence": 0.0-1.0, "reasoning": "..."}
