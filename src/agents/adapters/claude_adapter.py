@@ -46,6 +46,23 @@ class ClaudeAdapter(BaseAdapter):
         except Exception:
             return False
 
+    def ping(self) -> Optional[float]:
+        """Ping Claude CLI with a minimal prompt — returns latency ms or None."""
+        import time
+        start = time.monotonic()
+        try:
+            result = subprocess.run(
+                [self.CLI_COMMAND, "-p", "hi"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if result.returncode == 0:
+                return (time.monotonic() - start) * 1000
+            return None
+        except Exception:
+            return None
+
     def call(self, prompt: str, **kwargs) -> AdapterResponse:
         start = time.monotonic()
         try:

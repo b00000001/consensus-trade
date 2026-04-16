@@ -8,7 +8,7 @@ import queue
 import sqlite3
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -213,6 +213,69 @@ class AuditLog(SQLModel, table=True):
             if _chain_hash(prev, entry.payload_hash) != entry.chain_hash:
                 errors.append(f"Entry {i}: chain broken")
         return len(errors) == 0, errors
+
+
+# ─── BotHeartbeat ─────────────────────────────────────────────────────────────
+
+
+class BotHeartbeat(SQLModel, table=True):
+    __tablename__ = "bot_heartbeats"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    agent_id: str
+    model: str
+    latency_ms: float
+    success: bool
+    error: Optional[str] = None
+
+    @classmethod
+    def record(cls, agent_id: str, model: str, latency_ms: float, success: bool,
+              error: Optional[str] = None) -> "BotHeartbeat":
+        session = get_session()
+        entry = cls(
+            agent_id=agent_id,
+            model=model,
+            latency_ms=latency_ms,
+            success=success,
+            error=error,
+        )
+        session.add(entry)
+        session.commit()
+        session.refresh(entry)
+        return entry
+
+    @classmethod
+    def latest_per_agent(cls, hours: int = 24) -> dict[str, "BotHeartbeat"]:
+        """Return the most recent heartbeat per agent in the last `hours`."""
+        session = get_session()
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        rows = (
+            session.query(cls)
+            .filter(cls.timestamp >= cutoff)
+            .order_by(cls.timestamp.desc())
+            .all()
+        )
+        latest = {}
+        for row in rows:
+            if row.agent_id not in latest:
+                latest[row.agent_id] = row
+        return latest
+
+    @classmethod
+    def consecutive_failures(cls, agent_id: str, threshold: int = 3) -> bool:
+        """Return True if agent has `threshold` consecutive failures."""
+        session = get_session()
+        rows = (
+            session.query(cls)
+            .filter(cls.agent_id == agent_id)
+            .order_by(cls.timestamp.desc())
+            .limit(threshold)
+            .all()
+        )
+        if len(rows) < threshold:
+            return False
+        return all(not r.success for r in rows)
 
 
 # ─── CRUD helpers ─────────────────────────────────────────────────────────────

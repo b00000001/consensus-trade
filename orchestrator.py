@@ -261,6 +261,68 @@ class TradingOrchestrator:
         except Exception as e:
             log.error("Research pipeline error: %s", e)
 
+    def _run_heartbeat(self):
+        """
+        Ping all configured agents, log latency to DB.
+        Alert via Telegram if any agent is down for >3 consecutive checks.
+        """
+        from src.db_models import BotHeartbeat
+        from src.config_loader import get_backends
+
+        backends = get_backends()
+        ollama_base = os.environ.get("OLLAMA_BASE", "http://localhost:11434")
+
+        for be in backends.get("backends", []):
+            agent_id = be.get("id", "")
+            adapter_type = be.get("adapter", "")
+            model = be.get("model", "")
+
+            if adapter_type == "ollama":
+                import requests
+                start = time.monotonic()
+                try:
+                    resp = requests.get(f"{ollama_base}/api/tags", timeout=5)
+                    resp.raise_for_status()
+                    latency_ms = (time.monotonic() - start) * 1000
+                    BotHeartbeat.record(agent_id, model, latency_ms, success=True)
+                    log.debug("[%s] Ollama heartbeat OK: %.0fms", agent_id, latency_ms)
+                except Exception as e:
+                    BotHeartbeat.record(agent_id, model, 0.0, success=False, error=str(e))
+                    log.warning("[%s] Ollama heartbeat failed: %s", agent_id, e)
+                    if BotHeartbeat.consecutive_failures(agent_id, threshold=3):
+                        log.error("[%s] DOWN — alerting", agent_id)
+                        # TODO: trigger Telegram alert via OpenClaw cron
+            elif adapter_type == "minimax":
+                from agents.adapters import MiniMaxAdapter
+                a = MiniMaxAdapter(agent_id=agent_id, model=model)
+                latency = a.ping()
+                if latency is not None:
+                    BotHeartbeat.record(agent_id, model, latency, success=True)
+                else:
+                    BotHeartbeat.record(agent_id, model, 0.0, success=False, error="ping_failed")
+                    if BotHeartbeat.consecutive_failures(agent_id, threshold=3):
+                        log.error("[%s] MiniMax DOWN — alerting", agent_id)
+            elif adapter_type == "claude-cli":
+                from agents.adapters import ClaudeAdapter
+                a = ClaudeAdapter(agent_id=agent_id, model=model)
+                latency = a.ping()
+                if latency is not None:
+                    BotHeartbeat.record(agent_id, model, latency, success=True)
+                else:
+                    BotHeartbeat.record(agent_id, model, 0.0, success=False, error="ping_failed")
+                    if BotHeartbeat.consecutive_failures(agent_id, threshold=3):
+                        log.error("[%s] Claude DOWN — alerting", agent_id)
+            elif adapter_type == "gemini-cli":
+                from agents.adapters import GeminiAdapter
+                a = GeminiAdapter(agent_id=agent_id, model=model)
+                latency = a.ping()
+                if latency is not None:
+                    BotHeartbeat.record(agent_id, model, latency, success=True)
+                else:
+                    BotHeartbeat.record(agent_id, model, 0.0, success=False, error="ping_failed")
+                    if BotHeartbeat.consecutive_failures(agent_id, threshold=3):
+                        log.error("[%s] Gemini DOWN — alerting", agent_id)
+
     def _keep_ollama_warm(self):
         """Periodic ping to keep Ollama models warm."""
         import requests
@@ -302,6 +364,14 @@ class TradingOrchestrator:
             self._keep_ollama_warm,
             trigger=IntervalTrigger(seconds=120),
             id="ollama_warm",
+            replace_existing=True,
+        )
+
+        # Heartbeat — ping all agents every 2 min
+        self._scheduler.add_job(
+            self._run_heartbeat,
+            trigger=IntervalTrigger(seconds=120),
+            id="heartbeat",
             replace_existing=True,
         )
 

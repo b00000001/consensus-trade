@@ -36,3 +36,11 @@ class BaseAdapter(ABC):
     def model_name(self) -> str:
         """Return the model identifier used by this adapter."""
         pass
+
+    @abstractmethod
+    def ping(self) -> Optional[float]:
+        """
+        Run a lightweight health probe and return latency in ms, or None if unreachable.
+        Used for heartbeat monitoring — should be as fast as possible.
+        """
+        pass

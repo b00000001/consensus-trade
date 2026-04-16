@@ -47,6 +47,19 @@ class MiniMaxAdapter(BaseAdapter):
         except Exception:
             return False
 
+    def ping(self) -> Optional[float]:
+        start = time.monotonic()
+        try:
+            resp = requests.get(
+                f"{self.base_url}/models",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=5,
+            )
+            resp.raise_for_status()
+            return (time.monotonic() - start) * 1000
+        except Exception:
+            return None
+
     def call(self, prompt: str, **kwargs) -> AdapterResponse:
         start = time.monotonic()
         try:

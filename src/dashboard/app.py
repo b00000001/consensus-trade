@@ -144,6 +144,21 @@ def create_dashboard(
                                     style_as_list_view=True,
                                 ),
                             ]),
+                            html.Div(className="ceo-card", children=[
+                                html.Div("Bot Heartbeat Status", className="card-title"),
+                                dash_table.DataTable(
+                                    id="heartbeat-table",
+                                    columns=[
+                                        {"name": "Agent", "id": "agent_id"},
+                                        {"name": "Model", "id": "model"},
+                                        {"name": "Latency (ms)", "id": "latency_ms"},
+                                        {"name": "Status", "id": "status"},
+                                        {"name": "Last Check", "id": "timestamp"},
+                                    ],
+                                    data=[],
+                                    style_as_list_view=True,
+                                ),
+                            ]),
                         ]),
                     ]),
                 ], style={"padding": "30px"}),
@@ -264,6 +279,36 @@ def create_dashboard(
                 model = _agent_models.get(agent_id, "?")
                 rows.append({"asset": asset, "agent": agent_id, "signal": signal, "model": model})
         return rows
+
+    @callback(
+        Output("heartbeat-table", "data"),
+        Input("hot-refresh", "n_intervals"),
+    )
+    def update_heartbeat(n):
+        try:
+            from src.db_models import BotHeartbeat
+            latest = BotHeartbeat.latest_per_agent(hours=1)
+            rows = []
+            for agent_id, beat in latest.items():
+                if beat.success:
+                    if beat.latency_ms < 2000:
+                        status = "🟢 OK"
+                    elif beat.latency_ms < 10000:
+                        status = "🟡 SLOW"
+                    else:
+                        status = "🔴 LATENT"
+                else:
+                    status = "🔴 DOWN"
+                rows.append({
+                    "agent_id": agent_id,
+                    "model": beat.model,
+                    "latency_ms": f"{beat.latency_ms:.0f}ms" if beat.success else "—",
+                    "status": status,
+                    "timestamp": beat.timestamp.strftime("%H:%M:%S"),
+                })
+            return rows
+        except Exception:
+            return []
 
     # =========================================================================
     # COLD PATH CALLBACKS
