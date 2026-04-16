@@ -384,11 +384,13 @@ def create_dashboard(
             reports.append(html.Div(f"**{strategy}**: {narrative}", style={"marginBottom": "8px"}))
         return reports, "✅ Reports generated"
 
-    # Inject config panel into the CONFIG tab
-    from dash import html
-    config_tab_content = app.layout.children[2].children[4]  # dcc.Tabs > children[2] = CONFIG tab children
-    if hasattr(config_tab_content, 'id') and config_tab_content.id == "config-tab-content":
-        config_tab_content.children = render_config_panel(app)
+    # Inject config panel by finding the CONFIG tab element dynamically
+    for child in app.layout.children:
+        if hasattr(child, 'children') and isinstance(child.children, list):
+            for sub in child.children:
+                if hasattr(sub, 'id') and sub.id == "config-tab-content":
+                    sub.children = render_config_panel(app)
+                    break
 
     register_config_callbacks(app)
 
