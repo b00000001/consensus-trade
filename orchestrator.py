@@ -208,6 +208,11 @@ class TradingOrchestrator:
                 budget_cap_reached=self.budget_guard.cap_reached(symbol),
             )
 
+            # Build agent -> model map for dashboard display
+            agent_model_map = {s.agent_id: s.model for s in pool_result.signals}
+            if decision.escalated:
+                agent_model_map["claude-judge"] = "claude-sonnet-4-6"
+
             # 5. Dashboard updates
             update_consensus_log_event({
                 "asset": symbol,
@@ -215,8 +220,13 @@ class TradingOrchestrator:
                 "confidence": decision.confidence,
                 "reason": decision.reason,
                 "escalated": decision.escalated,
-            })
-            update_agent_votes(symbol, {s.agent_id: s.signal for s in pool_result.signals})
+                "agent_ids": [s.agent_id for s in pool_result.signals],
+            }, agent_models=agent_model_map)
+            update_agent_votes(
+                symbol,
+                {s.agent_id: s.signal for s in pool_result.signals},
+                agent_models=agent_model_map,
+            )
 
             # 6. Execute if not HOLD
             if decision.signal != "HOLD":

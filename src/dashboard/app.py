@@ -24,6 +24,7 @@ _global_paper_trader: Optional[PaperTrader] = None
 _global_portfolio: Optional[Portfolio] = None
 _execution_feed: list[dict] = []   # recent execution events
 _agent_votes: dict = {}             # asset -> {agent_id: signal}
+_agent_models: dict = {}           # agent_id -> model name
 _consensus_log: list[dict] = []     # consensus decisions
 _risk_status: dict = {
     "circuit_breaker_tripped": False,
@@ -120,6 +121,7 @@ def create_dashboard(
                                         {"name": "Decision", "id": "decision"},
                                         {"name": "Conf.", "id": "confidence"},
                                         {"name": "Logic Summary", "id": "reason"},
+                                        {"name": "Agents / Models", "id": "agents"},
                                     ],
                                     data=[],
                                     style_as_list_view=True,
@@ -134,6 +136,7 @@ def create_dashboard(
                                         {"name": "Asset", "id": "asset"},
                                         {"name": "Agent", "id": "agent"},
                                         {"name": "Signal", "id": "signal"},
+                                        {"name": "Model", "id": "model"},
                                     ],
                                     data=[],
                                     style_as_list_view=True,
@@ -237,7 +240,11 @@ def create_dashboard(
         Input("hot-refresh", "n_intervals"),
     )
     def update_consensus_log(n):
-        return _consensus_log[-50:]
+        rows = _consensus_log[-50:]
+        # Attach model names to agent column in each row
+        for row in rows:
+            row["agents"] = row.get("agents", "—")
+        return rows
 
     @callback(
         Output("agent-votes-table", "data"),
@@ -247,7 +254,8 @@ def create_dashboard(
         rows = []
         for asset, votes in _agent_votes.items():
             for agent_id, signal in votes.items():
-                rows.append({"asset": asset, "agent": agent_id, "signal": signal, "confidence": ""})
+                model = _agent_models.get(agent_id, "?")
+                rows.append({"asset": asset, "agent": agent_id, "signal": signal, "model": model})
         return rows
 
     # =========================================================================
@@ -369,7 +377,7 @@ def update_execution_feed_event(event: dict):
     })
 
 
-def update_consensus_log_event(decision: dict):
+def update_consensus_log_event(decision: dict, agent_models: dict = None):
     _consensus_log.append({
         "time": datetime.now().strftime("%H:%M:%S"),
         "asset": decision.get("asset", ""),
@@ -377,11 +385,13 @@ def update_consensus_log_event(decision: dict):
         "confidence": f"{decision.get('confidence', 0):.2f}",
         "reason": decision.get("reason", ""),
         "escalated": "✅" if decision.get("escalated") else "—",
+        "agents": ", ".join(f"{aid} ({agent_models.get(aid, '?')})" for aid in decision.get("agent_ids", [])) or "—",
     })
 
 
-def update_agent_votes(asset: str, votes: dict):
+def update_agent_votes(asset: str, votes: dict, agent_models: dict = None):
     _agent_votes[asset] = votes
+    _agent_models = agent_models or {}
 
 
 def update_risk_status(status: dict):
