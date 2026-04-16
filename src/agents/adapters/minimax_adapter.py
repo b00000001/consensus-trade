@@ -39,8 +39,8 @@ class MiniMaxAdapter(BaseAdapter):
     def health_check(self) -> bool:
         try:
             r = requests.get(
-                f"{self.base_url}/models",
-                headers={"Authorization": f"Bearer {self.api_key}"},
+                json={"model": self.model, "messages": [{"role": "user", "content": "hi"}],
+                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
                 timeout=5,
             )
             return r.status_code == 200
@@ -51,8 +51,8 @@ class MiniMaxAdapter(BaseAdapter):
         start = time.monotonic()
         try:
             resp = requests.get(
-                f"{self.base_url}/models",
-                headers={"Authorization": f"Bearer {self.api_key}"},
+                json={"model": self.model, "messages": [{"role": "user", "content": "hi"}],
+                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
                 timeout=5,
             )
             resp.raise_for_status()
