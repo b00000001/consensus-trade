@@ -7,10 +7,10 @@ import logging
 import os
 import sys
 
-# Fix module search path — /opt/consensus-trade/src is where all packages live
+# Fix module search path — cd to script dir and add src to path
 _BASE = os.path.dirname(os.path.abspath(__file__))
+os.chdir(_BASE)
 sys.path.insert(0, os.path.join(_BASE, "src"))
-sys.path.insert(0, _BASE)
 
 from orchestrator import TradingOrchestrator
 
