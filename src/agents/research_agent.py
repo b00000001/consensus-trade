@@ -61,7 +61,7 @@ class ResearchAgent:
         model: str = "qwen3:32b",
         adapter_name: str = "ollama",  # "ollama" | "gemini-cli" | "minimax"
         cycle_gate: int = 1,  # only fire every N cycles (gemini-cli: 8 recommended)
-        timeout: int = 60,
+        timeout: int = 120,
     ):
         self.agent_id = agent_id
         self.model = model
